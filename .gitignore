@@ -12,3 +12,7 @@ node_modules/
 
 # Local tool state (never commit)
 /.token-optimizer/
+
+# Local secrets (never commit)
+.env
+.env.*.local

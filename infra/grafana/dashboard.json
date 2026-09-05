@@ -1,0 +1,224 @@
+{
+  "title": "TOWER Radar",
+  "uid": "tower-radar",
+  "tags": ["tower", "grafana-track", "lgtm"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "description": "TOWER Studio Lot ATC radar: utilization, conflicts, resolve stats + Loki collision logs + Tempo traces + reroutes table. Every panel correlates by trace_id.",
+  "templating": {
+    "list": [
+      {
+        "name": "lot",
+        "label": "Lot",
+        "type": "constant",
+        "query": "main",
+        "current": {"text": "main", "value": "main"}
+      },
+      {
+        "name": "production",
+        "label": "Production",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "mimir"},
+        "query": "label_values(tower_slots_total, production)"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Lot Utilization %",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "mimir"},
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 0},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(tower_slots_total{status=\"confirmed\"}) / clamp_min(sum(tower_slots_total), 1)",
+          "legendFormat": "util %"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"steps": [{"value": 0, "color": "green"}, {"value": 80, "color": "amber"}, {"value": 95, "color": "red"}]}}}
+    },
+    {
+      "id": 2,
+      "title": "Active Conflicts (1h)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "mimir"},
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 0},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(tower_collisions_total[1h]))",
+          "legendFormat": "conflicts"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Avg Resolve Duration",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "mimir"},
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 0},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg(tower_resolve_duration_seconds)",
+          "legendFormat": "avg resolve"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 4,
+      "title": "Parse Duration p95",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "mimir"},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 4},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(tower_parse_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95 parse"
+        },
+        {
+          "refId": "B",
+          "expr": "avg(tower_parse_duration_seconds)",
+          "legendFormat": "avg parse"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Reroutes by Route",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "mimir"},
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 4},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (from, to) (tower_reroutes_total)",
+          "legendFormat": "{{from}}->{{to}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Errors by Code",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "mimir"},
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 4},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (code) (tower_errors_total)",
+          "legendFormat": "{{code}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(increase(tower_collisions_total[5m]))",
+          "legendFormat": "collisions/5m"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Collision Log (Loki)",
+      "type": "logs",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service=\"tower\"} |= \"Collision\" | json | line_format \"{{.message}} trace={{.trace_id}}\""
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Reroute Lineage (Tempo)",
+      "type": "traces",
+      "datasource": {"type": "tempo", "uid": "tempo"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+      "targets": [
+        {
+          "refId": "A",
+          "query": "{resource.service.name=\"tower\"} | select(status, trace_id)",
+          "queryType": "traceql"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Recent Reroutes (trace links)",
+      "type": "table",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 18},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service=\"tower\"} |= \"Reroute\" | json | line_format \"{{.trace_id}} {{.message}}\"",
+          "legendFormat": "reroutes"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Open in Tempo",
+              "url": "/explore?orgId=1&left={\"datasource\":\"tempo\",\"queries\":[{\"query\":\"${__field.labels.trace_id}\"}]}"
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "trace_id"},
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "trace_id -> Tempo",
+                    "url": "/explore?orgId=1&left={\"datasource\":\"tempo\",\"queries\":[{\"query\":\"${__value.text}\"}]}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "towerAlerts": [
+    {
+      "name": "HighCollisionRate",
+      "expr": "sum(increase(tower_collisions_total[1h])) > 5",
+      "for": "5m",
+      "severity": "warning",
+      "contactPoint": "tower-oncall-webhook",
+      "summary": "Collisions >5/hr on the lot radar"
+    },
+    {
+      "name": "StaleLedger",
+      "expr": "tower_ledger_lag_seconds > 300",
+      "for": "5m",
+      "severity": "warning",
+      "contactPoint": "tower-oncall-webhook",
+      "summary": "BigQuery ledger lag >5min (ledger mirror delayed)"
+    },
+    {
+      "name": "LotUtil",
+      "expr": "100 * sum(tower_slots_total{status=\"confirmed\"}) / clamp_min(sum(tower_slots_total), 1) > 95",
+      "for": "10m",
+      "severity": "critical",
+      "contactPoint": "tower-oncall-webhook",
+      "summary": "Lot utilization >95%"
+    }
+  ],
+  "towerContactPoint": {
+    "name": "tower-oncall-webhook",
+    "type": "webhook",
+    "url": "https://hooks.slack.com/services/REPLACE_ME",
+    "note": "Placeholder webhook for Lot Ops Slack; replace at T-11 deploy."
+  }
+}

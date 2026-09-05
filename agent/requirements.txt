@@ -1,5 +1,13 @@
 # TOWER agent — Pydantic v2 pinned (T-01 contract freeze).
 # Keep in sync with agent/pyproject.toml (pydantic>=2.0,<3).
+# T-04: google-adk (verified 2.8.0 via `uv add "google-adk>=1.0.0" --python 3.11`).
+# PRD's `google-cloud-aiplatform[agent_engines,adk]` also resolves but pulls
+# the same google-adk plus 76 packages; direct google-adk is lighter.
+google-adk>=1.0.0
 pydantic>=2.0,<3
+# T-06: OpenTelemetry SDK + OTLP HTTP exporter (Grafana Cloud push;
+# in-memory fallback when GRAFANA_CLOUD_OTLP_ENDPOINT is unset).
+opentelemetry-sdk>=1.44
+opentelemetry-exporter-otlp-proto-http>=1.44
 mypy>=1.11
 pytest>=8
