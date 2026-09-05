@@ -18,6 +18,6 @@
     "plugins": [{ "name": "next" }],
     "paths": { "@/*": ["./*"] }
   },
-  "include": ["lib/**/*", "../contracts/slot.ts", "next-env.d.ts"],
+  "include": ["app/**/*", "lib/**/*", "../contracts/slot.ts", "next-env.d.ts"],
   "exclude": ["node_modules"]
 }

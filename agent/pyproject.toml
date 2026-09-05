@@ -5,13 +5,24 @@ description = "TOWER Studio Lot ATC — deterministic agent + slot graph (T-01 c
 readme = "README.md"
 requires-python = "==3.11.*"
 dependencies = [
+  "google-adk>=1.0.0",
   "pydantic>=2.0,<3",
+  "opentelemetry-sdk>=1.44",
+  "opentelemetry-exporter-otlp-proto-http>=1.44",
   "pytest>=8",
 ]
 
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
+
+# The agent/ directory is both the uv project root AND the `agent`
+# package (imports are `agent.tower.*` via repo-root sys.path), so
+# setuptools flat-layout auto-discovery misfires (finds tower/graph as
+# top-level packages). Disable auto-discovery: tests import from source
+# via sys.path, nothing needs to be installed as a distribution.
+[tool.setuptools]
+packages = []
 
 [tool.mypy]
 python_version = "3.11"

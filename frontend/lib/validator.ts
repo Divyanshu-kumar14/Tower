@@ -114,3 +114,26 @@ export type CreateRequestInput = z.infer<typeof createRequestSchema>;
 export type RerouteRequestInput = z.infer<typeof rerouteRequestSchema>;
 export type SlotsQuery = z.infer<typeof slotsQuerySchema>;
 export type ErrorCode = z.infer<typeof errorCodeSchema>;
+
+/** T-05 additions (additive — every export above is untouched). */
+
+/**
+ * `Idempotency-Key` request header value — UUIDv4 (E19).
+ * Missing/invalid → 422 (IDEMPOTENCY_KEY_REUSE).
+ */
+export const idempotencyKeySchema = z
+  .string()
+  .uuid({ message: "Idempotency-Key header must be uuidv4" });
+
+/** `X-Trace-Id` — opaque correlation id, generated server-side when absent. */
+export const traceIdSchema = z.string().min(1).max(128);
+
+/**
+ * E02 boundary: inputs longer than this yield 422 NEEDS_CLARIFICATION
+ * (forward-as-clarification per contract) — NEVER silently truncated.
+ */
+export const NEEDS_CLARIFICATION_CHAR_LIMIT = 500;
+
+export function exceedsClarificationLimit(text: string): boolean {
+  return text.length > NEEDS_CLARIFICATION_CHAR_LIMIT;
+}

@@ -4,6 +4,7 @@
   "private": true,
   "description": "TOWER Studio Lot ATC — Next.js 14 App Router BFF + radar UI (T-01 contracts only)",
   "scripts": {
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -17,6 +18,8 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "openapi-typescript": "^7.4.0",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
   }
 }
