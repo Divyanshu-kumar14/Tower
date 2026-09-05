@@ -1,0 +1,465 @@
+openapi: 3.1.0
+info:
+  title: TOWER Studio Lot ATC API
+  version: 1.0.0
+  description: |
+    TOWER (T-01) frozen cross-team contract: BFF <-> Agent boundary.
+    Source: PRD §7.4 exact shapes. OpenAPI 3.1.
+    - POST /api/requests: NL text -> parsed slots + collision report + traceId.
+    - POST /api/reroute: transactional move to an alternative slot.
+    - GET /api/slots?date=: day-view slots + etag.
+    - GET /api/stream: SSE (slot:confirmed, collision).
+    Error codes frozen: IDEMPOTENT_REPLAY (409), NEEDS_CLARIFICATION (422),
+    STALE_ALTERNATIVE (409), INVALID_INTERVAL (422), IDEMPOTENCY_KEY_REUSE (422).
+servers:
+  - url: http://localhost:3000
+    description: Local Next.js BFF
+paths:
+  /api/requests:
+    post:
+      operationId: createRequest
+      summary: Submit a natural-language production request
+      description: |
+        Parses NL text (with `now` for TZ-aware "tomorrow" resolution),
+        runs deterministic collision check, returns parsed slots + collision
+        report. Idempotent on `idempotencyKey` (uuidv4).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRequestRequest'
+      responses:
+        '200':
+          description: Parsed + collision report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateRequestResponse'
+        '409':
+          description: Idempotent replay of a previously seen key (same body)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdempotentReplayError'
+        '422':
+          description: Needs clarification, invalid interval, or key reuse
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/NeedsClarificationError'
+                  - $ref: '#/components/schemas/InvalidIntervalError'
+                  - $ref: '#/components/schemas/IdempotencyKeyReuseError'
+  /api/reroute:
+    post:
+      operationId: rerouteRequest
+      summary: Confirm a reroute to an alternative slot
+      description: |
+        Transactional move: release old hold, hold alternative, move crew/gear
+        atomically. `hold_slot` re-checks inside the transaction; a stale
+        alternative yields 409 STALE_ALTERNATIVE (E12).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RerouteRequest'
+      responses:
+        '200':
+          description: Reroute confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RerouteResponse'
+        '409':
+          description: Alternative went stale between check and hold
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaleAlternativeError'
+        '422':
+          description: Key reuse with different body, or invalid interval
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/IdempotencyKeyReuseError'
+                  - $ref: '#/components/schemas/InvalidIntervalError'
+  /api/slots:
+    get:
+      operationId: listSlots
+      summary: List slots for a calendar date
+      parameters:
+        - name: date
+          in: query
+          required: true
+          description: Calendar date (YYYY-MM-DD), e.g. 2026-09-06
+          schema:
+            type: string
+            format: date
+            pattern: ^\d{4}-\d{2}-\d{2}$
+            example: '2026-09-06'
+      responses:
+        '200':
+          description: Slots for the date plus ETag for caching
+          headers:
+            ETag:
+              description: Weak/strong entity tag mirroring body `etag`
+              schema:
+                type: string
+                example: W/"abc123"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotsResponse'
+        '422':
+          description: Invalid date or interval
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidIntervalError'
+  /api/stream:
+    get:
+      operationId: streamEvents
+      summary: Server-sent events for radar updates
+      description: |
+        SSE stream. Events: `slot:confirmed`, `collision`. Client reconnects
+        with exponential backoff and falls back to polling GET /api/slots
+        every 5s (E18).
+      responses:
+        '200':
+          description: text/event-stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE framing; see examples for event payloads
+              examples:
+                slotConfirmed:
+                  summary: slot:confirmed
+                  value: |-
+                    event: slot:confirmed
+                    data: {"slotId":"slot_abc123","traceId":"trace_abc123","resource_id":"stage-2"}
+                collision:
+                  summary: collision
+                  value: |-
+                    event: collision
+                    data: {"requestId":"req_123","conflicts":[{"resource_id":"stage-3","overlap":"08:00-10:00","blockedBy":"req_atlas"}]}
+components:
+  schemas:
+    ResourceType:
+      type: string
+      enum: [stage, gear, crew]
+      example: stage
+    SlotStatus:
+      type: string
+      enum: [holding, confirmed, released]
+      example: confirmed
+    Slot:
+      type: object
+      additionalProperties: false
+      description: Canonical slot — field names frozen across TS/Zod/Pydantic.
+      required: [id, production, resource_type, resource_id, start, end, status, request_id, trace_id]
+      properties:
+        id:
+          type: string
+          example: slot_abc123
+        production:
+          type: string
+          minLength: 1
+          example: Project Atlas
+        resource_type:
+          $ref: '#/components/schemas/ResourceType'
+        resource_id:
+          type: string
+          example: stage-3
+        start:
+          type: string
+          format: date-time
+          description: UTC datetime (ISO 8601, Z suffix)
+          example: '2026-09-06T06:00:00Z'
+        end:
+          type: string
+          format: date-time
+          description: UTC datetime (ISO 8601, Z suffix); must be > start (else 422 INVALID_INTERVAL)
+          example: '2026-09-06T18:00:00Z'
+        status:
+          $ref: '#/components/schemas/SlotStatus'
+        request_id:
+          type: string
+          example: req_123
+        trace_id:
+          type: string
+          example: trace_abc123
+    ParsedSlot:
+      type: object
+      additionalProperties: false
+      description: Parser output before hold (no id/status yet).
+      required: [resource_type, resource_id, start, end]
+      properties:
+        resource_type:
+          $ref: '#/components/schemas/ResourceType'
+        resource_id:
+          type: string
+          example: stage-3
+        start:
+          type: string
+          format: date-time
+          example: '2026-09-06T06:00:00Z'
+        end:
+          type: string
+          format: date-time
+          example: '2026-09-06T18:00:00Z'
+    AlternativeSlot:
+      type: object
+      additionalProperties: false
+      description: Ranked alternative offered on collision; also the reroute target.
+      required: [resource_id, start, end]
+      properties:
+        resource_id:
+          type: string
+          example: stage-2
+        resource_type:
+          $ref: '#/components/schemas/ResourceType'
+        start:
+          type: string
+          format: date-time
+          example: '2026-09-06T06:00:00Z'
+        end:
+          type: string
+          format: date-time
+          example: '2026-09-06T18:00:00Z'
+    Conflict:
+      type: object
+      additionalProperties: false
+      required: [resource_id, overlap, blockedBy]
+      properties:
+        resource_id:
+          type: string
+          example: stage-3
+        overlap:
+          type: string
+          description: Human HH:MM-HH:MM overlap window on the requested date
+          example: 08:00-10:00
+        blockedBy:
+          type: string
+          description: Request id currently holding the overlapping interval
+          example: req_atlas
+    Alternative:
+      type: object
+      additionalProperties: false
+      required: [slot, score]
+      properties:
+        slot:
+          $ref: '#/components/schemas/AlternativeSlot'
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.95
+        reason:
+          type: string
+          example: Same size, free
+    ParsedResult:
+      type: object
+      additionalProperties: false
+      required: [slots, confidence]
+      properties:
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParsedSlot'
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.92
+    CollisionReport:
+      type: object
+      additionalProperties: false
+      required: [hasConflict, conflicts, alternatives]
+      properties:
+        hasConflict:
+          type: boolean
+          example: true
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Conflict'
+        alternatives:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alternative'
+    CreateRequestRequest:
+      type: object
+      additionalProperties: false
+      required: [text, idempotencyKey, now]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: >-
+            Natural-language request. Inputs >500 chars SHOULD yield 422
+            NEEDS_CLARIFICATION (truncate + clarify, E02). Empty/whitespace
+            yields 422 (E01).
+          example: Stage 3 tomorrow 6am-6pm, Alexa 65, Maya 2-4pm
+        idempotencyKey:
+          type: string
+          format: uuid
+          description: UUID v4 per submit; stored 24h
+          example: 123e4567-e89b-42d3-a456-426614174000
+        now:
+          type: string
+          format: date-time
+          description: Client clock (UTC ISO) for resolving "tomorrow" etc.
+          example: '2026-09-06T00:00:00Z'
+    CreateRequestResponse:
+      type: object
+      additionalProperties: false
+      required: [requestId, parsed, collision, traceId]
+      properties:
+        requestId:
+          type: string
+          example: req_123
+        parsed:
+          $ref: '#/components/schemas/ParsedResult'
+        collision:
+          $ref: '#/components/schemas/CollisionReport'
+        traceId:
+          type: string
+          example: trace_abc123
+    RerouteRequest:
+      type: object
+      additionalProperties: false
+      required: [requestId, alternative, idempotencyKey]
+      properties:
+        requestId:
+          type: string
+          example: req_123
+        alternative:
+          $ref: '#/components/schemas/AlternativeSlot'
+        idempotencyKey:
+          type: string
+          format: uuid
+          example: 123e4567-e89b-42d3-a456-426614174001
+    RerouteResponse:
+      type: object
+      additionalProperties: false
+      required: [status, slots, traceId]
+      properties:
+        status:
+          type: string
+          enum: [confirmed]
+          example: confirmed
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/Slot'
+        traceId:
+          type: string
+          example: trace_abc123
+    SlotsResponse:
+      type: object
+      additionalProperties: false
+      required: [date, slots, etag]
+      properties:
+        date:
+          type: string
+          format: date
+          example: '2026-09-06'
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/Slot'
+        etag:
+          type: string
+          example: W/"abc123"
+    SlotConfirmedEvent:
+      type: object
+      additionalProperties: false
+      required: [slotId, traceId, resource_id]
+      properties:
+        slotId:
+          type: string
+          example: slot_abc123
+        traceId:
+          type: string
+          example: trace_abc123
+        resource_id:
+          type: string
+          example: stage-2
+    CollisionEvent:
+      type: object
+      additionalProperties: false
+      required: [requestId, conflicts]
+      properties:
+        requestId:
+          type: string
+          example: req_123
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Conflict'
+    IdempotentReplayError:
+      type: object
+      additionalProperties: false
+      required: [code, requestId]
+      properties:
+        code:
+          type: string
+          enum: [IDEMPOTENT_REPLAY]
+        requestId:
+          type: string
+          example: req_123
+        message:
+          type: string
+          example: Same idempotencyKey already processed
+    NeedsClarificationError:
+      type: object
+      additionalProperties: false
+      required: [code, field, message]
+      properties:
+        code:
+          type: string
+          enum: [NEEDS_CLARIFICATION]
+        field:
+          type: string
+          example: date
+        message:
+          type: string
+          example: Did you mean 2026-09-06?
+    StaleAlternativeError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [STALE_ALTERNATIVE]
+        message:
+          type: string
+          example: Alternative already taken; refreshed alternatives available
+    InvalidIntervalError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [INVALID_INTERVAL]
+        message:
+          type: string
+          example: end must be after start and >= 15 minutes
+    IdempotencyKeyReuseError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [IDEMPOTENCY_KEY_REUSE]
+        message:
+          type: string
+          example: idempotencyKey already used with a different body

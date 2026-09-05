@@ -1,0 +1,5 @@
+# TOWER agent — Pydantic v2 pinned (T-01 contract freeze).
+# Keep in sync with agent/pyproject.toml (pydantic>=2.0,<3).
+pydantic>=2.0,<3
+mypy>=1.11
+pytest>=8

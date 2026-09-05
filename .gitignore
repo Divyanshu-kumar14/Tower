@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.mypy_cache/
+.pytest_cache/
+
+# Node / TypeScript
+node_modules/
+*.tsbuildinfo
+
+# Local tool state (never commit)
+/.token-optimizer/

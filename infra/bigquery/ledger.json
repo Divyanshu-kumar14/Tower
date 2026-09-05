@@ -1,0 +1,50 @@
+{
+  "dataset": "tower_ledger",
+  "table": "slots",
+  "description": "TOWER T-02 async audit mirror of Postgres slots (ADR-02: never block a hold on BQ). One row per slot write; full Slot JSON in `slot`, filter/sort fields promoted to columns.",
+  "timePartitioning": {
+    "type": "DAY",
+    "field": "created_at"
+  },
+  "clustering": {
+    "fields": ["resource_id"]
+  },
+  "schema": [
+    {
+      "name": "request_id",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "description": "Mirrors Slot.request_id"
+    },
+    {
+      "name": "slot",
+      "type": "JSON",
+      "mode": "NULLABLE",
+      "description": "Full Slot JSON {id, production, resource_type, resource_id, start, end, status, request_id, trace_id}"
+    },
+    {
+      "name": "status",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "description": "holding | confirmed | released"
+    },
+    {
+      "name": "trace_id",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "description": "Correlation id shared with Mimir / Loki / Tempo"
+    },
+    {
+      "name": "created_at",
+      "type": "TIMESTAMP",
+      "mode": "REQUIRED",
+      "description": "Row write time; DAY partition field (UTC)"
+    },
+    {
+      "name": "idempotency_key",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "description": "Client UUIDv4; replay guard"
+    }
+  ]
+}
