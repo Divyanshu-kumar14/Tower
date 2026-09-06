@@ -9,5 +9,12 @@ pydantic>=2.0,<3
 # in-memory fallback when GRAFANA_CLOUD_OTLP_ENDPOINT is unset).
 opentelemetry-sdk>=1.44
 opentelemetry-exporter-otlp-proto-http>=1.44
+# T-11a: production server deps (pinned minor, multi-arch safe).
+# fastapi + uvicorn serve agent/main.py; psycopg[binary] (manylinux wheels,
+# incl. ARM64) backs PostgresSlotStore. Lower bounds match the verified
+# local .venv (fastapi 0.141.1, uvicorn 0.52.4).
+fastapi>=0.141
+uvicorn>=0.52
+psycopg[binary]>=3.1
 mypy>=1.11
 pytest>=8
