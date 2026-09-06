@@ -17,6 +17,21 @@ export const DEFAULT_AGENT_BASE_URL = "http://localhost:8000";
 /** Sync-HTTP budget: P95 <3s per PRD G1; BFF aborts earlier to stay inside it. */
 export const AGENT_TIMEOUT_MS = 2500;
 
+/**
+ * Effective agent timeout: env-overridable for slow environments
+ * (cold starts, distant regions, fah-longer model latency) without
+ * changing the 2500ms production budget. Reads `AGENT_TIMEOUT_MS`
+ * (digits only); falls back to the constant on missing/invalid.
+ */
+export function getAgentTimeoutMs(): number {
+  const raw = process.env.AGENT_TIMEOUT_MS?.trim() ?? "";
+  if (/^\d+$/.test(raw)) {
+    const parsed = Number.parseInt(raw, 10);
+    if (parsed > 0) return parsed;
+  }
+  return AGENT_TIMEOUT_MS;
+}
+
 export function getAgentBaseUrl(): string {
   const raw = process.env.AGENT_BASE_URL;
   if (raw === undefined || raw.trim().length === 0) return DEFAULT_AGENT_BASE_URL;
@@ -110,7 +125,7 @@ export async function invokeAgent<T>(
   opts: InvokeOptions,
 ): Promise<T> {
   const fetchImpl: FetchImpl = opts.fetchImpl ?? fetch;
-  const timeoutMs = opts.timeoutMs ?? AGENT_TIMEOUT_MS;
+  const timeoutMs = opts.timeoutMs ?? getAgentTimeoutMs();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const forwardAbort = (): void => controller.abort();
