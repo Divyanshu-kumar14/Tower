@@ -1,0 +1,111 @@
+# TOWER beast stack (T-11b) — Oracle ARM64 (ampere-beast, 132.226.187.232).
+#
+# Topology: postgres:16-alpine + redis:7-alpine + agent (agent/Dockerfile) +
+# frontend (frontend/Dockerfile, standalone) on the isolated `tower-net`
+# bridge. Host-publishes ONLY frontend :3100; agent/postgres/redis are
+# internal-only (no host ports) so Traefik (:80/:443) and Coolify (:8000)
+# never collide.
+#
+# Run from the repo root on the beast (project name `tower`, isolated from
+# the Coolify control plane):
+#
+#   docker compose -f infra/beast/docker-compose.yml --project-name tower up -d --build
+#
+# Secrets: NEVER `environment:` literals here. All secret-bearing services
+# read /opt/tower/.env (mode 0600, scp'd, never committed) via `env_file`.
+# That file holds: POSTGRES_DB/USER/PASSWORD, DATABASE_URL (password MUST
+# match POSTGRES_PASSWORD, host MUST be `postgres`), GOOGLE_API_KEY,
+# GRAFANA_CLOUD_OTLP_ENDPOINT/INSTANCE_ID/API_KEY (+ URL/STACK token).
+# Frontend literals below are NON-SECRET wiring only.
+name: tower
+
+services:
+  postgres:
+    image: postgres:16-alpine # official multi-arch (amd64+arm64); ARM64-safe
+    env_file:
+      - /opt/tower/.env # POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+    volumes:
+      - tower-pgdata:/var/lib/postgresql/data # named volume; NEVER `down -v`
+    networks:
+      - tower-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-tower} -d $${POSTGRES_DB:-tower}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine # official multi-arch (amd64+arm64); ARM64-safe
+    networks:
+      - tower-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  agent:
+    build:
+      context: ../.. # repo root (compose file lives in infra/beast/)
+      dockerfile: agent/Dockerfile
+    image: tower-agent:beast
+    env_file:
+      - /opt/tower/.env # DATABASE_URL, GOOGLE_API_KEY, GRAFANA_CLOUD_*
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - tower-net
+    healthcheck:
+      # Strict 200: lifespan fails loud (E17) and /health 503s while
+      # Postgres is down, keeping the container out of rotation.
+      test: ["CMD-SHELL", "python -c \"import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=4).status == 200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ../.. # repo root (compose file lives in infra/beast/)
+      # Beast-only shim (npm 12 to match the lockfile toolchain); revert
+      # to frontend/Dockerfile once the vitest peer conflict is fixed —
+      # see Dockerfile.frontend header.
+      dockerfile: infra/beast/Dockerfile.frontend
+    image: tower-frontend:beast
+    env_file:
+      - /opt/tower/.env # DATABASE_URL (presence flips /api/health to ok)
+    environment:
+      # NON-SECRET wiring only. AGENT_BASE_URL points at the compose
+      # service name (internal DNS); AGENT_TIMEOUT_MS=15000 is the beast
+      # override for measured Gemini latency — the 2500ms production
+      # budget in frontend/lib/agent.ts stays the code default.
+      AGENT_BASE_URL: http://agent:8000
+      AGENT_TIMEOUT_MS: "15000"
+    depends_on:
+      agent:
+        condition: service_healthy
+    ports:
+      - "3100:3000" # ONLY host-published port in this stack
+    networks:
+      - tower-net
+    healthcheck:
+      # Any HTTP status counts as alive: /api/health returns 503
+      # LOT_OPS_DEGRADED while serving reads-only — degraded is alive.
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/health').then(()=>process.exit(0)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  tower-net:
+    driver: bridge
+
+volumes:
+  tower-pgdata:
+    name: tower-pgdata

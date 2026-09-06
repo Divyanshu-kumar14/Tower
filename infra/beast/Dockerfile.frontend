@@ -1,0 +1,59 @@
+# TOWER frontend build shim (T-11b, beast-only) — DELETE-ME follow-up.
+#
+# Identical to frontend/Dockerfile EXCEPT the marked T-11b delta below.
+# Why: `npm ci` under the beast's node:20-alpine npm (10.8.2) fails with
+# ERESOLVE — vitest@5.0.0 peerOptional @types/node@^22||>=24 vs the root
+# pin @types/node@^20.14.0 — while the repo's committed lockfile was
+# produced with a newer npm that tolerates it (local npm 12.0.2; npm 12
+# itself needs node >= 22 so it cannot run on this node:20 builder). The
+# shim passes --legacy-peer-deps and changes NOTHING else: package-lock.json
+# still pins the exact tree, so the installed modules are byte-identical in
+# shape to the local proven install — only the strict peer re-validation
+# is skipped. frontend/ stays pristine per the T-11b packet (read+build).
+#
+# Proper fix (frontend owner, post-hackathon): resolve the vitest /
+# @types/node peer conflict (or move the builder to node >= 22), then point
+# infra/beast/docker-compose.yml back at frontend/Dockerfile and delete
+# this file.
+FROM node:20-alpine AS deps
+
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./
+# --- T-11b DELTA (sole difference vs frontend/Dockerfile): skip the strict
+# peer re-validation that npm 10 applies to the committed lockfile.
+RUN npm ci --legacy-peer-deps
+
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY frontend ./
+ENV NEXT_TELEMETRY_DISABLED=1
+# Requires next.config.mjs `output: "standalone"` (T-11a).
+RUN npm run build
+
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    NEXT_TELEMETRY_DISABLED=1
+
+# Standalone server + static assets. (No public/ COPY: the repo ships no
+# frontend/public dir; re-add this line if one appears.)
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+# Non-root runtime: the official node image ships the `node` user.
+USER node
+
+EXPOSE 3000
+
+# Liveness via node fetch (no curl/wget in the runner): any HTTP status
+# counts as alive, because /api/health returns 503 LOT_OPS_DEGRADED while
+# serving reads-only — degraded is still alive.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["node", "-e", "fetch('http://localhost:3000/api/health').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
+
+CMD ["node", "server.js"]

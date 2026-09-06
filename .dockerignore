@@ -1,0 +1,16 @@
+# TOWER container build context exclusions (T-11a).
+# Keeps images lean and deployable: no host venvs, caches, or secrets.
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+node_modules/
+.next/
+.git/
+.env
+.env.*.local
+*.tsbuildinfo
+coverage/
+test-results/
+playwright-report/
