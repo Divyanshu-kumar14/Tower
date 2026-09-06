@@ -13,7 +13,9 @@
  * agent event bus (Redis pubsub) and keeps the stream open with a 15s
  * heartbeat interval. Until then this handler emits heartbeat-only and
  * closes — deliberately NO demo domain events, so radar never renders
- * phantom slots. Frame shapes are unit-tested via `sseEvent` below.
+ * phantom slots. Frame shapes are unit-tested via `sseEvent` in
+ * `../../../lib/sse` (kept out of this route module so Next's
+ * typed-routes generation never type-checks a non-handler export).
  */
 import { randomUUID } from "node:crypto";
 import {
@@ -29,11 +31,6 @@ function traceIdOf(req: Request): string {
   const incoming = req.headers.get("x-trace-id")?.trim() ?? "";
   if (incoming.length > 0 && incoming.length <= 128) return incoming;
   return `trace_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
-}
-
-/** SSE frame builder (exported for T-11 event-bus use + unit tests). */
-export function sseEvent(event: string, data: unknown): string {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
 export async function GET(req: Request): Promise<Response> {

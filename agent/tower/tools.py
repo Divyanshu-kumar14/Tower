@@ -88,7 +88,9 @@ __all__ = [
 ]
 
 MAX_NL_CHARS: int = 500
-GEMINI_MODEL: str = "gemini-1.5-flash"
+# Live Flash-tier model (verified via ListModels 2026-09-05; 1.5-flash is
+# retired and 404s). Pinned without "-latest" suffix for reproducibility.
+GEMINI_MODEL: str = "gemini-2.5-flash"
 
 # Seed-catalog canonical ids (from infra/seed.sql knowledge).
 KNOWN_RESOURCE_IDS: list[str] = [
@@ -272,6 +274,12 @@ def _build_prompt(nl: str, now_iso: str) -> str:
         "You are TOWER ATC slot parser. Return FORCED JSON only, no prose.\n"
         f"now_iso (resolve relative dates against this, TZ-aware): {now_iso}\n"
         f"known resources (use ONLY these ids): {catalog}\n"
+        "Day inheritance (no floating times): the primary day is the day "
+        "of the first explicitly dated window, else now_iso's day. Every "
+        "slot MUST carry a full TZ-aware start+end: attach bare times to "
+        "the primary day; give a dateless resource the primary day's full "
+        "span (earliest start to latest end of the dated slots). Only use "
+        "another day when the text names it.\n"
         "Schema: {\"slots\": [{\"resource_type\": \"stage|gear|crew\", "
         "\"resource_id\": \"<id>\", \"start\": \"<ISO TZ-aware>\", "
         "\"end\": \"<ISO TZ-aware>\"}], \"confidence\": 0.0-1.0, "

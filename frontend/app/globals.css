@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * TOWER global surface (T-07) — dark ATC radar console.
+ * Ink ground slate-950, grid slate-800, cyan-400 accent ONLY.
+ * Craft floor: contrast ≥4.5:1 (placeholder slate-400, never slate-500),
+ * themed focus rings / selection / caret / scrollbars, tabular numerals.
+ */
+
+:root {
+  --tower-ink: #020617; /* slate-950 */
+  --tower-grid: #1e293b; /* slate-800 */
+  --tower-confirmed: #34d399; /* emerald-400 */
+  --tower-holding: #fbbf24; /* amber-400 */
+  --tower-conflict: #f43f5e; /* rose-500 */
+  --tower-accent: #22d3ee; /* cyan-400 */
+  color-scheme: dark;
+}
+
+html {
+  background-color: var(--tower-ink);
+}
+
+body {
+  background-color: var(--tower-ink);
+  color: #f1f5f9; /* slate-100 — ~15:1 on ink */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Secondary text: slate-400 (~5.8:1 on ink). Never slate-500 for text. */
+.tower-secondary {
+  color: #94a3b8;
+}
+
+/* Data text (timecodes, trace IDs, chips): JetBrains Mono + tabular figures. */
+.tower-data {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Themed text selection: cyan wash, ink text. */
+::selection {
+  background-color: rgb(34 211 238 / 0.85);
+  color: #020617;
+}
+
+/* Themed caret for the ops input. */
+.tower-input {
+  caret-color: var(--tower-accent);
+}
+
+.tower-input::placeholder {
+  color: #94a3b8; /* slate-400 — ≥4.5:1, craft floor */
+  opacity: 1;
+}
+
+/* Focus rings: 2px cyan-400 offset — visible on every control. */
+.tower-focus:focus-visible {
+  outline: 2px solid var(--tower-accent);
+  outline-offset: 2px;
+}
+
+/* Themed scrollbars (webkit + firefox). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 var(--tower-ink); /* slate-700 on ink */
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: var(--tower-ink);
+}
+*::-webkit-scrollbar-thumb {
+  background: #334155;
+  border: 2px solid var(--tower-ink);
+  border-radius: 0;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Radar grid utility: 40px slate-800 lattice on ink.
+ * A grid overlay is earned here — the radar scope IS a map canvas
+ * (craft floor: grids need an actual canvas/map under them). */
+.tower-grid {
+  background-image:
+    linear-gradient(to right, rgb(30 41 59 / 0.9) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(30 41 59 / 0.9) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Underline offset for links in this world. */
+a {
+  text-underline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-tower-shimmer,
+  .animate-tower-blip,
+  .animate-tower-shake {
+    animation: none !important;
+  }
+}

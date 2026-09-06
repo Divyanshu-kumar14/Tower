@@ -9,9 +9,14 @@ __pycache__/
 # Node / TypeScript
 node_modules/
 *.tsbuildinfo
+.next/
+test-results/
+playwright-report/
+coverage/
 
 # Local tool state (never commit)
 /.token-optimizer/
+.impeccable/
 
 # Local secrets (never commit)
 .env

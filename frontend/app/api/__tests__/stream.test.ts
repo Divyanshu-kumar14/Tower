@@ -4,7 +4,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetIdempotencyStoreForTests } from "../../../lib/idempotency";
 import { resetRateLimiterForTests } from "../../../lib/rate-limit";
-import { GET, sseEvent } from "../stream/route";
+import { GET } from "../stream/route";
+import { sseEvent } from "../../../lib/sse";
 
 beforeEach(() => {
   resetRateLimiterForTests();
