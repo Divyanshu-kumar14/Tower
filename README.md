@@ -28,23 +28,6 @@ Built for the **Agentic Cinema Hackathon — Grafana Track**, where *execution i
 
 ---
 
-## 🎬 Live demo (60 seconds)
-
-**Hosted stack:** `http://132.226.187.232:3100` · Tailnet alias: `http://100.125.126.127:3100`
-
-> If the public IP times out, use the tailnet alias — the box serves `:3100` fine, the Oracle VCN security list just needs one ingress rule (`TCP 3100 from 0.0.0.0/0`). Details in [`infra/beast/README.md`](infra/beast/README.md). Full click-by-click script in [`demo/script.md`](demo/script.md).
-
-| Time | You do | You see |
-|------|--------|---------|
-| **0:00** | Open `/api/health` | `200 {"status":"ok"}` + a `trace_…` id — the lot is awake |
-| **0:10** | Paste `Stage 3 tomorrow 6am-6pm, Alexa 65, Maya 2-4pm` (with `now=2026-09-05T12:00:00Z`) | 🔴 **Collision:** Stage 3 `08:00–10:00` blocked by *Project Atlas* → ranked fix: **Stage 2 (score 0.975, same specs)** |
-| **0:35** | Click **Reroute & Hold Stage 2** | ✅ `status:"confirmed"` + new `trace_id` |
-| **0:50** | Look at the radar | 🟢 Radar green, timeline holds 4 rows (Atlas confirmed + your 3 holds), trace links Loki → Tempo |
-
-**Curl-verified proof (2026-09-06):** `req_44d1dfacbae5` → `hasConflict:true` → reroute → `trace_6b9cfb78be8d` → `GET /api/slots?date=2026-09-06` returns 4 rows, `/` returns 200, all 4 `tower-*` containers healthy, control-plane containers untouched.
-
----
-
 ## 🏗️ How it works
 
 ### The big picture
@@ -355,37 +338,6 @@ Tower/
 
 ---
 
-## ✅ Testing & verification (no vibes)
-
-```bash
-# contracts
-npm run typecheck --prefix frontend && mypy agent/
-
-# deterministic heart (no LLM imports allowed in graph/)
-pytest agent/graph -v
-
-# agent tools (mocked Gemini) + BFF contracts
-pytest agent/ -v && npm test --prefix frontend
-
-# end-to-end + load (zero double-books at 50 VU)
-npx playwright test && k6 run infra/k6/spike.js
-
-# gates — a task is NOT done until these pass
-python .opencode/scripts/lint_runner.py
-python .opencode/scripts/security_scan.py
-python .opencode/scripts/checklist.py .
-```
-
-**Judging proofs:**
-
-```bash
-grep -R grafana --include='*.py' agent/ | head              # runtime OTel wiring, not README mention
-grep -R google.cloud.aiplatform agent/ | head               # agent runtime proof
-rg "hold_slot|check_collisions|parse_request" frontend/ agent/ services/  # call-site audit
-```
-
----
-
 ## 🚢 Deployment (the beast)
 
 Live topology — 4 services on isolated `tower-net`, only `:3100` published (agent/pg/redis stay container-internal so Traefik/Coolify never collide):
@@ -407,20 +359,6 @@ Deploy pointers (full sequence in [`infra/beast/README.md`](infra/beast/README.m
 5. Rollback is `down` → retag `:prev` → `up -d` (images kept); **never** `down -v` (that deletes the ledger volume).
 
 Still manual post-hackathon: DNS (bare IP), Google login, BigQuery mirror, Grafana dashboard provision run.
-
----
-
-## 🗺️ Roadmap
-
-- [x] Contracts + schemas + seed (T-01/T-02)
-- [x] Deterministic Slot Graph (T-03) — the heart
-- [x] Agent tools + forced safety + BFF + OTel (T-04/T-05/T-06)
-- [x] Radar + timeline + conflict drawer (T-07/T-08/T-09)
-- [x] Edge matrix + chaos + runbook (T-10)
-- [x] Beast deploy + canned demo (T-11)
-- [ ] Google login (`verified:true` lockdown, F-AUTH-01)
-- [ ] `provision.py` dashboard run + BigQuery mirror automation
-- [ ] Ghost-hold janitor (expire abandoned `holding` rows — `revalidate()` already blocks them at hold time)
 
 ---
 
